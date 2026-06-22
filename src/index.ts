@@ -489,6 +489,119 @@ class MetabaseServer {
             }
           },
           {
+            name: "create_card",
+            description: "Create a saved question/card from a native SQL query with a chosen visualization (display + settings).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Card title" },
+                database_id: { type: "number", description: "ID of the database to query" },
+                query: { type: "string", description: "Native SQL query" },
+                display: { type: "string", description: "Visualization type: table, scalar, line, bar, row, area, pie, combo, etc. Default 'table'." },
+                visualization_settings: { type: "object", description: "Metabase visualization_settings (e.g. graph.dimensions, graph.metrics, column formatting)" },
+                template_tags: { type: "object", description: "Native template-tags map for {{var}} parameters (e.g. an adjustable time-grain dropdown)" },
+                collection_id: { type: "number", description: "Optional collection ID to save the card into" }
+              },
+              required: ["name", "database_id", "query"]
+            }
+          },
+          {
+            name: "update_card",
+            description: "Update an existing card in place: SQL query, display, visualization_settings, name. Use to fix/restyle a saved question without recreating it.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                card_id: { type: "number", description: "ID of the card to update" },
+                name: { type: "string" },
+                database_id: { type: "number", description: "Required if updating query" },
+                query: { type: "string", description: "New native SQL" },
+                display: { type: "string", description: "Visualization type" },
+                visualization_settings: { type: "object" },
+                template_tags: { type: "object", description: "Native template-tags map for {{var}} parameters" },
+                collection_id: { type: "number", description: "Move the card to this collection" }
+              },
+              required: ["card_id"]
+            }
+          },
+          {
+            name: "update_dashboard",
+            description: "Update a dashboard: name, description, or move it to a collection (collection_id).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                dashboard_id: { type: "number", description: "ID of the dashboard to update" },
+                name: { type: "string" },
+                description: { type: "string" },
+                collection_id: { type: "number", description: "Move the dashboard to this collection" }
+              },
+              required: ["dashboard_id"]
+            }
+          },
+          {
+            name: "add_dashboard_text",
+            description: "Add a markdown text/header card to a dashboard (e.g. a description). Defaults to inserting at the top and shifting existing cards down.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                dashboard_id: { type: "number" },
+                text: { type: "string", description: "Markdown content" },
+                height: { type: "number", description: "Grid rows tall (default 3)" },
+                width: { type: "number", description: "Grid cols wide (default 24)" },
+                row: { type: "number", description: "Row to place at (default 0 = top)" },
+                shift: { type: "boolean", description: "Shift existing cards down by height (default true)" }
+              },
+              required: ["dashboard_id", "text"]
+            }
+          },
+          {
+            name: "create_dashboard",
+            description: "Create a new (empty) dashboard. Add cards with add_card_to_dashboard.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Dashboard name" },
+                description: { type: "string", description: "Optional description" },
+                collection_id: { type: "number", description: "Optional collection ID" }
+              },
+              required: ["name"]
+            }
+          },
+          {
+            name: "add_card_to_dashboard",
+            description: "Place an existing card on a dashboard with grid layout (row/col/size) and optional per-placement viz settings. Appends to existing cards.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                dashboard_id: { type: "number", description: "Target dashboard ID" },
+                card_id: { type: "number", description: "Card/question ID to add" },
+                row: { type: "number", description: "Grid row (default 0)" },
+                col: { type: "number", description: "Grid column (default 0)" },
+                size_x: { type: "number", description: "Width in grid columns (default 12)" },
+                size_y: { type: "number", description: "Height in grid rows (default 8)" },
+                visualization_settings: { type: "object", description: "Optional per-dashcard viz overrides" }
+              },
+              required: ["dashboard_id", "card_id"]
+            }
+          },
+          {
+            name: "add_dashboard_filter",
+            description: "Add a dashboard filter (parameter) and wire it to a card's native {{variable}} (template tag) — e.g. an adjustable time-grain dropdown. Idempotent on the filter slug.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                dashboard_id: { type: "number", description: "Target dashboard ID" },
+                name: { type: "string", description: "Filter label shown on the dashboard (e.g. 'Grain')" },
+                card_id: { type: "number", description: "Single card whose template-tag the filter controls (use this OR mappings)" },
+                template_tag: { type: "string", description: "The {{var}} name in that card's SQL (e.g. 'grain')" },
+                mappings: { type: "array", description: "Wire one filter to MANY cards: [{card_id, template_tag}, ...]", items: { type: "object" } },
+                type: { type: "string", description: "Metabase parameter type (default 'category'; use 'date/single' for a date filter)" },
+                default: { type: "string", description: "Default value" },
+                values: { type: "array", description: "Static dropdown values", items: { type: "string" } }
+              },
+              required: ["dashboard_id", "name"]
+            }
+          },
+          {
             name: "execute_query",
             description: "Execute a SQL query against a Metabase database",
             inputSchema: {
@@ -547,12 +660,25 @@ class MetabaseServer {
           case "list_cards": {
             this.logDebug('Fetching all cards/questions from Metabase');
             const response = await this.request<any[]>('/api/card');
-            this.logInfo(`Successfully retrieved ${response.length} cards/questions`);
+            // Returning every card's full metadata overflows the stdio transport (connection
+            // closed). Project to the essentials needed to find a card; fetch full SQL via the
+            // metabase://card/{id} resource or get_dashboard_cards.
+            const slim = (response || []).map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              description: c.description,
+              collection_id: c.collection_id,
+              collection_name: c.collection?.name,
+              database_id: c.database_id ?? c.dataset_query?.database,
+              query_type: c.query_type,
+              archived: c.archived,
+            }));
+            this.logInfo(`Successfully retrieved ${slim.length} cards/questions`);
 
             return {
               content: [{
                 type: "text",
-                text: JSON.stringify(response, null, 2)
+                text: JSON.stringify(slim, null, 2)
               }]
             };
           }
@@ -581,7 +707,8 @@ class MetabaseServer {
             }
 
             this.logDebug(`Executing card with ID: ${cardId}`);
-            const parameters = request.params?.arguments?.parameters || {};
+            // Metabase's /query endpoint requires `parameters` to be a sequential array, not an object.
+            const parameters = request.params?.arguments?.parameters || [];
 
             const response = await this.request<any>(`/api/card/${cardId}/query`, {
               method: 'POST',
@@ -610,14 +737,273 @@ class MetabaseServer {
             this.logDebug(`Fetching cards for dashboard with ID: ${dashboardId}`);
             const response = await this.request<any>(`/api/dashboard/${dashboardId}`);
 
-            const cardCount = response.cards?.length || 0;
-            this.logInfo(`Successfully retrieved ${cardCount} cards from dashboard: ${dashboardId}`);
+            // Metabase renamed `cards` -> `dashcards`; fall back across versions. Keep only the
+            // card definition (incl. dataset_query / native SQL) and placement, dropping heavy
+            // viz/series blobs that bloat the payload and can break stdio transport.
+            const rawCards: any[] = response.dashcards ?? response.cards ?? [];
+            const dashcards = rawCards.map((dc: any) => ({
+              id: dc.id,
+              card_id: dc.card_id,
+              row: dc.row,
+              col: dc.col,
+              size_x: dc.size_x,
+              size_y: dc.size_y,
+              card: dc.card
+                ? {
+                    id: dc.card.id,
+                    name: dc.card.name,
+                    description: dc.card.description,
+                    display: dc.card.display,
+                    database_id: dc.card.database_id ?? dc.card.dataset_query?.database,
+                    dataset_query: dc.card.dataset_query,
+                  }
+                : null,
+            }));
+
+            this.logInfo(`Successfully retrieved ${dashcards.length} cards from dashboard: ${dashboardId}`);
 
             return {
               content: [{
                 type: "text",
-                text: JSON.stringify(response.cards, null, 2)
+                text: JSON.stringify(dashcards, null, 2)
               }]
+            };
+          }
+
+          case "create_card": {
+            const args: any = request.params?.arguments || {};
+            const { name, database_id, query } = args;
+            if (!name || !database_id || !query) {
+              throw new McpError(ErrorCode.InvalidParams, "name, database_id and query are required");
+            }
+            const body = {
+              name,
+              dataset_query: {
+                type: "native",
+                native: { query, "template-tags": args.template_tags || {} },
+                database: database_id,
+              },
+              display: args.display || "table",
+              visualization_settings: args.visualization_settings || {},
+              collection_id: args.collection_id ?? null,
+            };
+            const response = await this.request<any>('/api/card', {
+              method: 'POST',
+              body: JSON.stringify(body),
+            });
+            this.logInfo(`Created card ${response.id}: ${response.name}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name, display: response.display }, null, 2) }]
+            };
+          }
+
+          case "update_card": {
+            const args: any = request.params?.arguments || {};
+            if (!args.card_id) {
+              throw new McpError(ErrorCode.InvalidParams, "card_id is required");
+            }
+            const body: any = {};
+            if (args.name !== undefined) body.name = args.name;
+            if (args.display !== undefined) body.display = args.display;
+            if (args.visualization_settings !== undefined) body.visualization_settings = args.visualization_settings;
+            if (args.collection_id !== undefined) body.collection_id = args.collection_id;
+            if (args.query !== undefined) {
+              if (!args.database_id) {
+                throw new McpError(ErrorCode.InvalidParams, "database_id is required when updating query");
+              }
+              body.dataset_query = {
+                type: "native",
+                native: { query: args.query, "template-tags": args.template_tags || {} },
+                database: args.database_id,
+              };
+            }
+            const response = await this.request<any>(`/api/card/${args.card_id}`, {
+              method: 'PUT',
+              body: JSON.stringify(body),
+            });
+            this.logInfo(`Updated card ${response.id}: ${response.name}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name, display: response.display }, null, 2) }]
+            };
+          }
+
+          case "add_dashboard_text": {
+            const args: any = request.params?.arguments || {};
+            if (!args.dashboard_id || !args.text) {
+              throw new McpError(ErrorCode.InvalidParams, "dashboard_id and text are required");
+            }
+            const height = args.height ?? 3;
+            const width = args.width ?? 24;
+            const atRow = args.row ?? 0;
+            const shift = args.shift !== false;
+            const dash = await this.request<any>(`/api/dashboard/${args.dashboard_id}`);
+            const existing = (dash.dashcards ?? dash.cards ?? []).map((dc: any) => ({
+              id: dc.id,
+              card_id: dc.card_id,
+              row: shift ? (dc.row ?? 0) + height : dc.row,
+              col: dc.col,
+              size_x: dc.size_x,
+              size_y: dc.size_y,
+              series: dc.series ?? [],
+              parameter_mappings: dc.parameter_mappings ?? [],
+              visualization_settings: dc.visualization_settings ?? {},
+            }));
+            const textCard = {
+              id: -1,
+              card_id: null,
+              row: atRow,
+              col: 0,
+              size_x: width,
+              size_y: height,
+              series: [],
+              parameter_mappings: [],
+              visualization_settings: {
+                text: args.text,
+                virtual_card: { name: null, display: "text", dataset_query: {}, visualization_settings: {}, archived: false },
+              },
+            };
+            const response = await this.request<any>(`/api/dashboard/${args.dashboard_id}`, {
+              method: "PUT",
+              body: JSON.stringify({ parameters: dash.parameters ?? [], dashcards: [...existing, textCard] }),
+            });
+            const count = (response.dashcards ?? response.cards ?? []).length;
+            this.logInfo(`Added text card to dashboard ${args.dashboard_id} (${count} cards total)`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ dashboard_id: args.dashboard_id, added: "text", row: atRow, total_cards: count }, null, 2) }]
+            };
+          }
+
+          case "update_dashboard": {
+            const args: any = request.params?.arguments || {};
+            if (!args.dashboard_id) {
+              throw new McpError(ErrorCode.InvalidParams, "dashboard_id is required");
+            }
+            const body: any = {};
+            if (args.name !== undefined) body.name = args.name;
+            if (args.description !== undefined) body.description = args.description;
+            if (args.collection_id !== undefined) body.collection_id = args.collection_id;
+            const response = await this.request<any>(`/api/dashboard/${args.dashboard_id}`, {
+              method: 'PUT',
+              body: JSON.stringify(body),
+            });
+            this.logInfo(`Updated dashboard ${response.id}: ${response.name}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name, collection_id: response.collection_id }, null, 2) }]
+            };
+          }
+
+          case "create_dashboard": {
+            const args: any = request.params?.arguments || {};
+            if (!args.name) {
+              throw new McpError(ErrorCode.InvalidParams, "name is required");
+            }
+            const response = await this.request<any>('/api/dashboard', {
+              method: 'POST',
+              body: JSON.stringify({
+                name: args.name,
+                description: args.description ?? null,
+                collection_id: args.collection_id ?? null,
+              }),
+            });
+            this.logInfo(`Created dashboard ${response.id}: ${response.name}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name }, null, 2) }]
+            };
+          }
+
+          case "add_card_to_dashboard": {
+            const args: any = request.params?.arguments || {};
+            const { dashboard_id, card_id } = args;
+            if (!dashboard_id || !card_id) {
+              throw new McpError(ErrorCode.InvalidParams, "dashboard_id and card_id are required");
+            }
+            // Preserve existing placements, then append the new one. Metabase PUT replaces the
+            // whole dashcards list, and new cards use a negative temp id (server assigns real ids).
+            const dash = await this.request<any>(`/api/dashboard/${dashboard_id}`);
+            const existing = (dash.dashcards ?? dash.cards ?? []).map((dc: any) => ({
+              id: dc.id,
+              card_id: dc.card_id,
+              row: dc.row,
+              col: dc.col,
+              size_x: dc.size_x,
+              size_y: dc.size_y,
+              series: dc.series ?? [],
+              parameter_mappings: dc.parameter_mappings ?? [],
+              visualization_settings: dc.visualization_settings ?? {},
+            }));
+            const newCard = {
+              id: -1,
+              card_id,
+              row: args.row ?? 0,
+              col: args.col ?? 0,
+              size_x: args.size_x ?? 12,
+              size_y: args.size_y ?? 8,
+              series: [],
+              parameter_mappings: [],
+              visualization_settings: args.visualization_settings || {},
+            };
+            const response = await this.request<any>(`/api/dashboard/${dashboard_id}`, {
+              method: 'PUT',
+              body: JSON.stringify({ dashcards: [...existing, newCard] }),
+            });
+            const count = (response.dashcards ?? response.cards ?? []).length;
+            this.logInfo(`Added card ${card_id} to dashboard ${dashboard_id} (${count} cards total)`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ dashboard_id, card_id, total_cards: count }, null, 2) }]
+            };
+          }
+
+          case "add_dashboard_filter": {
+            const args: any = request.params?.arguments || {};
+            const { dashboard_id, name } = args;
+            const targets: any[] = Array.isArray(args.mappings) && args.mappings.length
+              ? args.mappings
+              : (args.card_id && args.template_tag ? [{ card_id: args.card_id, template_tag: args.template_tag }] : []);
+            if (!dashboard_id || !name || !targets.length) {
+              throw new McpError(ErrorCode.InvalidParams, "dashboard_id, name and (card_id+template_tag OR mappings[]) are required");
+            }
+            const tagByCard = new Map<number, string>(targets.map((t: any) => [t.card_id, t.template_tag]));
+            const slug = String(name).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+            const dash = await this.request<any>(`/api/dashboard/${dashboard_id}`);
+
+            const ptype = args.type || "category";
+            const sectionId = ptype.startsWith("date") ? "date" : ptype.startsWith("number") ? "number" : "string";
+            const param: any = { id: slug, name, slug, type: ptype, sectionId };
+            if (args.default !== undefined) param.default = args.default;
+            if (Array.isArray(args.values)) {
+              param.values_source_type = "static-list";
+              param.values_source_config = { values: args.values };
+            }
+            const parameters = [...((dash.parameters ?? []).filter((p: any) => p.id !== slug)), param];
+
+            const dashcards = (dash.dashcards ?? dash.cards ?? []).map((dc: any) => {
+              const out: any = {
+                id: dc.id,
+                card_id: dc.card_id,
+                row: dc.row,
+                col: dc.col,
+                size_x: dc.size_x,
+                size_y: dc.size_y,
+                series: dc.series ?? [],
+                visualization_settings: dc.visualization_settings ?? {},
+                parameter_mappings: (dc.parameter_mappings ?? []).filter((m: any) => m.parameter_id !== slug),
+              };
+              if (tagByCard.has(dc.card_id)) {
+                out.parameter_mappings = [
+                  ...out.parameter_mappings,
+                  { parameter_id: slug, card_id: dc.card_id, target: ["variable", ["template-tag", tagByCard.get(dc.card_id)]] },
+                ];
+              }
+              return out;
+            });
+
+            await this.request<any>(`/api/dashboard/${dashboard_id}`, {
+              method: "PUT",
+              body: JSON.stringify({ parameters, dashcards }),
+            });
+            this.logInfo(`Added dashboard filter '${name}' → ${targets.length} card(s)`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ dashboard_id, filter: name, slug, mapped_cards: targets }, null, 2) }]
             };
           }
 

@@ -6,6 +6,8 @@
 
 A Model Context Protocol server that integrates AI assistants with Metabase analytics platform.
 
+> **Fork note:** This is a fork of [hyeongjun-dev/metabase-mcp-server](https://github.com/hyeongjun-dev/metabase-mcp-server) that adds write tools for authoring cards, dashboards, dashboard filters, and text cards (see "Authoring tools" below). All original credit goes to the upstream author.
+
 ## Overview
 
 This TypeScript-based MCP server provides seamless integration with the Metabase API, enabling AI assistants to directly interact with your analytics data. Designed for Claude and other MCP-compatible AI assistants, this server acts as a bridge between your analytics platform and conversational AI.
@@ -28,6 +30,16 @@ The server exposes the following tools for AI assistants:
 - `execute_card`: Run saved questions and retrieve results with optional parameters
 - `get_dashboard_cards`: Extract all cards from a specific dashboard
 - `execute_query`: Execute custom SQL queries against any connected database
+
+#### Authoring tools (added in this fork)
+
+- `create_card`: Create a saved question/card from a native SQL query with a chosen visualization
+- `update_card`: Update an existing card in place (SQL, display, visualization settings, name, collection)
+- `create_dashboard`: Create a new empty dashboard
+- `update_dashboard`: Update a dashboard's name/description or move it to a collection
+- `add_card_to_dashboard`: Place an existing card on a dashboard with grid layout and viz overrides
+- `add_dashboard_text`: Add a markdown text/header card to a dashboard
+- `add_dashboard_filter`: Add a dashboard filter (parameter) wired to a card's native `{{variable}}`
 
 ## Configuration
 
