@@ -567,6 +567,27 @@ class MetabaseServer {
             }
           },
           {
+            name: "list_collections",
+            description: "List Metabase collections (folders). Returns id, name, and parent location for each.",
+            inputSchema: {
+              type: "object",
+              properties: {}
+            }
+          },
+          {
+            name: "create_collection",
+            description: "Create a new Metabase collection (folder). Use to give a dashboard its own folder, then pass the returned id as collection_id to create_dashboard / create_card.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                name: { type: "string", description: "Collection name" },
+                description: { type: "string", description: "Optional description" },
+                parent_id: { type: "number", description: "Optional parent collection ID (omit for a top-level collection)" }
+              },
+              required: ["name"]
+            }
+          },
+          {
             name: "add_card_to_dashboard",
             description: "Place an existing card on a dashboard with grid layout (row/col/size) and optional per-placement viz settings. Appends to existing cards.",
             inputSchema: {
@@ -908,6 +929,40 @@ class MetabaseServer {
             this.logInfo(`Created dashboard ${response.id}: ${response.name}`);
             return {
               content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name }, null, 2) }]
+            };
+          }
+
+          case "list_collections": {
+            const response = await this.request<any[]>('/api/collection');
+            const collections = (response || []).map((c: any) => ({
+              id: c.id,
+              name: c.name,
+              location: c.location,
+              parent_id: c.parent_id ?? null,
+              personal: !!c.personal_owner_id,
+            }));
+            return {
+              content: [{ type: "text", text: JSON.stringify(collections, null, 2) }]
+            };
+          }
+
+          case "create_collection": {
+            const args: any = request.params?.arguments || {};
+            if (!args.name) {
+              throw new McpError(ErrorCode.InvalidParams, "name is required");
+            }
+            const body: any = {
+              name: args.name,
+              description: args.description ?? null,
+            };
+            if (args.parent_id !== undefined) body.parent_id = args.parent_id;
+            const response = await this.request<any>('/api/collection', {
+              method: 'POST',
+              body: JSON.stringify(body),
+            });
+            this.logInfo(`Created collection ${response.id}: ${response.name}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name, location: response.location }, null, 2) }]
             };
           }
 
