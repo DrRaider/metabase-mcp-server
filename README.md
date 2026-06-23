@@ -6,7 +6,7 @@
 
 A Model Context Protocol server that integrates AI assistants with Metabase analytics platform.
 
-> **Fork note:** This is a fork of [hyeongjun-dev/metabase-mcp-server](https://github.com/hyeongjun-dev/metabase-mcp-server) that adds write tools for authoring cards, dashboards, dashboard filters, and text cards (see "Authoring tools" below). All original credit goes to the upstream author.
+> **Fork note:** This is a fork of [hyeongjun-dev/metabase-mcp-server](https://github.com/hyeongjun-dev/metabase-mcp-server) that adds write tools for authoring cards, dashboards, dashboard filters, text cards, and collections (see "Authoring tools" below). All original credit goes to the upstream author.
 
 ## Overview
 
@@ -40,6 +40,8 @@ The server exposes the following tools for AI assistants:
 - `add_card_to_dashboard`: Place an existing card on a dashboard with grid layout and viz overrides
 - `add_dashboard_text`: Add a markdown text/header card to a dashboard
 - `add_dashboard_filter`: Add a dashboard filter (parameter) wired to a card's native `{{variable}}`
+- `list_collections`: List collections (folders) with their id, name, and parent location
+- `create_collection`: Create a new collection (folder), optionally nested under a `parent_id`, so a dashboard can be given its own folder
 
 ## Configuration
 
