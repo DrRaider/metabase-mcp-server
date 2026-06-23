@@ -42,6 +42,7 @@ The server exposes the following tools for AI assistants:
 - `add_dashboard_filter`: Add a dashboard filter (parameter) wired to a card's native `{{variable}}`
 - `list_collections`: List collections (folders) with their id, name, and parent location
 - `create_collection`: Create a new collection (folder), optionally nested under a `parent_id`, so a dashboard can be given its own folder
+- `update_collection`: Rename a collection, change its description, or move it under a different parent (`parent_id` null/0 moves it to the root)
 
 ## Configuration
 

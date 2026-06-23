@@ -588,6 +588,20 @@ class MetabaseServer {
             }
           },
           {
+            name: "update_collection",
+            description: "Update a collection (folder): rename, change its description, or move it under a different parent (set parent_id to null/0 to move it to the root).",
+            inputSchema: {
+              type: "object",
+              properties: {
+                collection_id: { type: "number", description: "ID of the collection to update" },
+                name: { type: "string", description: "New name" },
+                description: { type: "string", description: "New description" },
+                parent_id: { type: ["number", "null"], description: "Move under this parent collection ID; null or 0 moves it to the root" }
+              },
+              required: ["collection_id"]
+            }
+          },
+          {
             name: "add_card_to_dashboard",
             description: "Place an existing card on a dashboard with grid layout (row/col/size) and optional per-placement viz settings. Appends to existing cards.",
             inputSchema: {
@@ -963,6 +977,26 @@ class MetabaseServer {
             this.logInfo(`Created collection ${response.id}: ${response.name}`);
             return {
               content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name, location: response.location }, null, 2) }]
+            };
+          }
+
+          case "update_collection": {
+            const args: any = request.params?.arguments || {};
+            if (!args.collection_id) {
+              throw new McpError(ErrorCode.InvalidParams, "collection_id is required");
+            }
+            const body: any = {};
+            if (args.name !== undefined) body.name = args.name;
+            if (args.description !== undefined) body.description = args.description;
+            // parent_id null or 0 moves the collection to the root.
+            if (args.parent_id !== undefined) body.parent_id = args.parent_id ? args.parent_id : null;
+            const response = await this.request<any>(`/api/collection/${args.collection_id}`, {
+              method: 'PUT',
+              body: JSON.stringify(body),
+            });
+            this.logInfo(`Updated collection ${response.id}: ${response.name}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ id: response.id, name: response.name, location: response.location, parent_id: response.parent_id ?? null }, null, 2) }]
             };
           }
 
