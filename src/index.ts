@@ -554,6 +554,19 @@ class MetabaseServer {
             }
           },
           {
+            name: "update_dashboard_text",
+            description: "Edit the markdown of an EXISTING text/header card on a dashboard, in place. Pass the dashcard id (the `id` of the entry whose card_id is null in get_dashboard_cards) and the new markdown; it replaces that card's text and leaves every other card untouched.",
+            inputSchema: {
+              type: "object",
+              properties: {
+                dashboard_id: { type: "number" },
+                dashcard_id: { type: "number", description: "Dashcard id of the text card (the entry with card_id: null in get_dashboard_cards)" },
+                text: { type: "string", description: "New markdown content (replaces the existing text)" }
+              },
+              required: ["dashboard_id", "dashcard_id", "text"]
+            }
+          },
+          {
             name: "create_dashboard",
             description: "Create a new (empty) dashboard. Add cards with add_card_to_dashboard.",
             inputSchema: {
@@ -905,6 +918,51 @@ class MetabaseServer {
             this.logInfo(`Added text card to dashboard ${args.dashboard_id} (${count} cards total)`);
             return {
               content: [{ type: "text", text: JSON.stringify({ dashboard_id: args.dashboard_id, added: "text", row: atRow, total_cards: count }, null, 2) }]
+            };
+          }
+
+          case "update_dashboard_text": {
+            const args: any = request.params?.arguments || {};
+            if (!args.dashboard_id || args.dashcard_id === undefined || args.text === undefined) {
+              throw new McpError(ErrorCode.InvalidParams, "dashboard_id, dashcard_id and text are required");
+            }
+            const dash = await this.request<any>(`/api/dashboard/${args.dashboard_id}`);
+            let found = false;
+            const dashcards = (dash.dashcards ?? dash.cards ?? []).map((dc: any) => {
+              const mapped: any = {
+                id: dc.id,
+                card_id: dc.card_id,
+                row: dc.row,
+                col: dc.col,
+                size_x: dc.size_x,
+                size_y: dc.size_y,
+                series: dc.series ?? [],
+                parameter_mappings: dc.parameter_mappings ?? [],
+                visualization_settings: dc.visualization_settings ?? {},
+              };
+              if (dc.id === args.dashcard_id) {
+                if (dc.card_id != null) {
+                  throw new McpError(ErrorCode.InvalidParams, `dashcard ${args.dashcard_id} is a question card (card_id ${dc.card_id}), not a text card — use update_card for it`);
+                }
+                found = true;
+                mapped.visualization_settings = {
+                  ...mapped.visualization_settings,
+                  text: args.text,
+                  virtual_card: mapped.visualization_settings?.virtual_card ?? { name: null, display: "text", dataset_query: {}, visualization_settings: {}, archived: false },
+                };
+              }
+              return mapped;
+            });
+            if (!found) {
+              throw new McpError(ErrorCode.InvalidParams, `No dashcard with id ${args.dashcard_id} on dashboard ${args.dashboard_id} (use get_dashboard_cards to find the text card's id)`);
+            }
+            await this.request<any>(`/api/dashboard/${args.dashboard_id}`, {
+              method: "PUT",
+              body: JSON.stringify({ parameters: dash.parameters ?? [], dashcards }),
+            });
+            this.logInfo(`Updated text dashcard ${args.dashcard_id} on dashboard ${args.dashboard_id}`);
+            return {
+              content: [{ type: "text", text: JSON.stringify({ dashboard_id: args.dashboard_id, dashcard_id: args.dashcard_id, updated: "text" }, null, 2) }]
             };
           }
 
